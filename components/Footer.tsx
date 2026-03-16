@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import Link from 'next/link'
 
 const socialLinks = [
   { name: 'Twitter', href: '#' },
@@ -14,9 +15,9 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto">
         <div className="grid md:grid-cols-3 gap-8 mb-8">
           <div>
-            <h3 className="text-xl font-bold text-cyan-accent mb-4">Earth Intelligence</h3>
+            <h3 className="text-xl font-bold text-cyan-accent mb-4">TerraSentinel</h3>
             <p className="text-white/60 text-sm">
-              Advanced remote sensing intelligence platform powered by AI and satellite data.
+              AI-powered satellite intelligence for flood monitoring across India.
             </p>
           </div>
 
@@ -24,19 +25,19 @@ export default function Footer() {
             <h4 className="text-sm font-semibold text-white mb-4">Resources</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#research" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
-                  Research Papers
-                </a>
+                <Link href="/research-technology" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
+                  Research / Technology
+                </Link>
               </li>
               <li>
-                <a href="#api" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
-                  API Documentation
-                </a>
+                <Link href="/api-data-access" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
+                  API / Data Access
+                </Link>
               </li>
               <li>
-                <a href="#" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
-                  Documentation
-                </a>
+                <Link href="/satellite-data" className="text-white/60 hover:text-cyan-accent text-sm transition-colors">
+                  Satellite Data
+                </Link>
               </li>
             </ul>
           </div>
@@ -64,7 +65,7 @@ export default function Footer() {
 
         <div className="border-t border-white/10 pt-8">
           <p className="text-white/60 text-sm text-center">
-            © {new Date().getFullYear()} Earth Intelligence. All rights reserved.
+            © {new Date().getFullYear()} TerraSentinel. All rights reserved.
           </p>
         </div>
       </div>

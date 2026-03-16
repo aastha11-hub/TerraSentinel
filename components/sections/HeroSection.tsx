@@ -1,17 +1,17 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import GlobeScene from '../GlobeScene'
+import CDNGlobe from '../CDNGlobe'
 
 export default function HeroSection() {
   return (
-    <section id="home" className="relative h-screen flex items-center justify-center overflow-hidden">
-      {/* Background particles */}
-      <div className="absolute inset-0">
-        {[...Array(50)].map((_, i) => {
+    <section className="relative min-h-[calc(100vh-5rem)] pt-24 pb-12 overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 opacity-40 bg-[radial-gradient(circle_at_20%_10%,rgba(0,245,255,0.18),transparent_40%),radial-gradient(circle_at_80%_30%,rgba(0,245,255,0.10),transparent_35%)]" />
+        {[...Array(28)].map((_, i) => {
           const randomX = Math.random() * 100
           const randomY = Math.random() * 100
-          const randomOpacity = Math.random() * 0.5 + 0.2
+          const randomOpacity = Math.random() * 0.5 + 0.15
           return (
             <motion.div
               key={i}
@@ -22,11 +22,11 @@ export default function HeroSection() {
                 opacity: randomOpacity,
               }}
               animate={{
-                y: [`${randomY}%`, `${(randomY + Math.random() * 20) % 100}%`],
+                y: [`${randomY}%`, `${(randomY + Math.random() * 18) % 100}%`],
                 opacity: [randomOpacity, randomOpacity * 0.5, randomOpacity],
               }}
               transition={{
-                duration: Math.random() * 10 + 10,
+                duration: Math.random() * 10 + 12,
                 repeat: Infinity,
                 ease: 'linear',
               }}
@@ -35,81 +35,56 @@ export default function HeroSection() {
         })}
       </div>
 
-      {/* 3D Globe */}
-      <div className="absolute inset-0 z-0">
-        <GlobeScene />
-      </div>
-
-      {/* Content Overlay */}
-      <div className="relative z-10 text-center px-6 sm:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-        >
-          <motion.h1
-            className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-6"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
-          >
-            <span className="text-gradient">AI-Powered</span>
-            <br />
-            <span className="text-white">Remote Sensing</span>
-            <br />
-            <span className="text-white">Intelligence</span>
-          </motion.h1>
-
-          <motion.p
-            className="text-lg sm:text-xl md:text-2xl text-white/70 mb-12 max-w-2xl mx-auto"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-          >
-            Real-time satellite data. Advanced Earth insights.
-          </motion.p>
-
+      <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-12 items-center">
+          {/* LEFT */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.8 }}
+            transition={{ duration: 0.7, delay: 0.1 }}
           >
-            <motion.button
-              className="px-8 py-4 text-lg font-semibold glow-border glow-border-hover bg-space-navy/50 backdrop-blur-sm text-cyan-accent relative overflow-hidden group"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span className="relative z-10">Explore Platform</span>
-              <motion.div
-                className="absolute inset-0 bg-cyan-accent/10"
-                initial={{ x: '-100%' }}
-                whileHover={{ x: 0 }}
-                transition={{ duration: 0.3 }}
-              />
-            </motion.button>
+            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight">
+              <span className="text-gradient">TerraSentinel</span>
+            </h1>
+            <p className="mt-5 text-lg sm:text-xl text-white/80 max-w-xl">
+              AI-Powered Remote Sensing Intelligence
+            </p>
+            <p className="mt-4 text-base sm:text-lg text-white/65 max-w-xl leading-relaxed">
+              Real-time satellite intelligence for flood monitoring across India.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <a
+                href="/live-map"
+                className="px-6 py-3 text-sm sm:text-base font-semibold glow-border glow-border-hover bg-space-navy/50 backdrop-blur-sm text-cyan-accent"
+              >
+                View Live Flood Map
+              </a>
+              <a
+                href="/analytics"
+                className="px-6 py-3 text-sm sm:text-base font-semibold border border-white/15 hover:border-cyan-accent/40 text-white/85 hover:text-cyan-accent transition-colors bg-white/5"
+              >
+                Explore Analytics
+              </a>
+            </div>
           </motion.div>
-        </motion.div>
-      </div>
 
-      {/* Scroll indicator */}
-      <motion.div
-        className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.2, repeat: Infinity, duration: 2 }}
-      >
-        <motion.div
-          className="w-6 h-10 border-2 border-cyan-accent/50 rounded-full flex justify-center"
-          animate={{ y: [0, 10, 0] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        >
+          {/* RIGHT */}
           <motion.div
-            className="w-1 h-3 bg-cyan-accent rounded-full mt-2"
-            animate={{ opacity: [1, 0.3, 1] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
-          />
-        </motion.div>
-      </motion.div>
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="flex justify-center lg:justify-end"
+          >
+            <div className="glow-border bg-space-navy/30 backdrop-blur-sm rounded-2xl p-4">
+              <CDNGlobe
+                containerId="globe-container"
+                className="w-[340px] h-[340px] sm:w-[440px] sm:h-[440px] lg:w-[500px] lg:h-[500px]"
+              />
+            </div>
+          </motion.div>
+        </div>
+      </div>
     </section>
   )
 }
