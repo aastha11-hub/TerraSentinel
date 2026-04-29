@@ -136,16 +136,77 @@ app.get("/api/sources", asyncHandler(async (req, res) => {
   }
 }));
 
+// GET /api/flood-alerts - Get all flood alerts
+app.get("/api/flood-alerts", asyncHandler(async (req, res) => {
+  console.log('GET /api/flood-alerts - Fetching flood alerts');
+  
+  try {
+    let result;
+    
+    if (dbConnected) {
+      try {
+        result = await pool.query('SELECT * FROM flood_alerts ORDER BY created_at DESC');
+        console.log(`Successfully fetched ${result.rows.length} flood alerts from database`);
+      } catch (dbError) {
+        console.error('Database query failed:', dbError.message);
+        result = { rows: [] };
+      }
+    } else {
+      console.log('Using empty data (database not connected)');
+      result = { rows: [] };
+    }
+    
+    res.json({ 
+      success: true, 
+      data: result.rows,
+      message: `Successfully fetched flood alerts (${dbConnected ? 'from database' : 'from mock data'})`
+    });
+  } catch (error) {
+    console.error('Error fetching flood alerts:', error);
+    throw error;
+  }
+}));
+
+// GET /api/monitoring-zones - Get all monitoring zones
+app.get("/api/monitoring-zones", asyncHandler(async (req, res) => {
+  console.log('GET /api/monitoring-zones - Fetching monitoring zones');
+  
+  try {
+    let result;
+    
+    if (dbConnected) {
+      try {
+        result = await pool.query('SELECT * FROM monitoring_zones WHERE is_active = true ORDER BY name');
+        console.log(`Successfully fetched ${result.rows.length} monitoring zones from database`);
+      } catch (dbError) {
+        console.error('Database query failed:', dbError.message);
+        result = { rows: [] };
+      }
+    } else {
+      console.log('Using empty data (database not connected)');
+      result = { rows: [] };
+    }
+    
+    res.json({ 
+      success: true, 
+      data: result.rows,
+      message: `Successfully fetched monitoring zones (${dbConnected ? 'from database' : 'from mock data'})`
+    });
+  } catch (error) {
+    console.error('Error fetching monitoring zones:', error);
+    throw error;
+  }
+}));
+
 // GET /api/dashboard/:source - Returns combined data
 app.get("/api/dashboard/:source", asyncHandler(async (req, res) => {
   const sourceName = req.params.source;
   console.log(`GET /api/dashboard/${sourceName} - Fetching dashboard data`);
   
   try {
-    let sourceResult, metricsResult, historicalResult;
+    let sourceResult, metricsResult;
     
     if (dbConnected) {
-      // Try to fetch from database
       try {
         // Get source details
         sourceResult = await pool.query(
@@ -161,112 +222,36 @@ app.get("/api/dashboard/:source", asyncHandler(async (req, res) => {
           });
         }
 
-        // Get latest metrics
+        // Get latest metrics for this source
         metricsResult = await pool.query(
-          `SELECT * FROM satellite_metrics 
-           WHERE source_name = $1 
-           ORDER BY updated_at DESC 
-           LIMIT 1`,
-          [sourceName]
-        );
-
-        // Get historical metrics for trends
-        historicalResult = await pool.query(
-          `SELECT updated_at, ndvi, water_extent 
-           FROM satellite_metrics 
-           WHERE source_name = $1 
-           ORDER BY updated_at ASC 
-           LIMIT 30`,
-          [sourceName]
+          'SELECT * FROM satellite_metrics WHERE source_id = $1 ORDER BY recorded_at DESC LIMIT 10',
+          [sourceResult.rows[0].id]
         );
         
         console.log(`Successfully fetched dashboard data for ${sourceName} from database`);
       } catch (dbError) {
         console.error('Database query failed, falling back to mock data:', dbError.message);
-        // Fallback to mock data
         sourceResult = { rows: mockSources.filter(s => s.name.toLowerCase() === sourceName.toLowerCase()) };
-        
-        if (sourceResult.rows.length === 0) {
-          return res.status(404).json({
-            success: false,
-            error: "Source not found",
-            message: `No source found with name ${sourceName}`
-          });
-        }
-        
-        // Generate mock metrics
-        const now = new Date();
-        metricsResult = {
-          rows: [{
-            id: 1,
-            source_name: sourceName,
-            flood_risk_score: Math.floor(Math.random() * 40) + 60,
-            water_extent: Math.random() * 30 + 30,
-            ndvi: Math.random() * 0.4 + 0.4,
-            soil_moisture: Math.random() * 20 + 60,
-            cloud_cover: Math.random() * 30 + 10,
-            updated_at: now.toISOString()
-          }]
-        };
-        
-        // Generate mock historical data
-        historicalResult = {
-          rows: Array.from({ length: 10 }, (_, i) => {
-            const date = new Date(now.getTime() - (9 - i) * 24 * 60 * 60 * 1000);
-            return {
-              updated_at: date.toISOString(),
-              ndvi: Math.random() * 0.4 + 0.4,
-              water_extent: Math.random() * 30 + 30
-            };
-          })
-        };
+        metricsResult = { rows: [] };
       }
     } else {
-      // Use mock data if database is not connected
       console.log('Using mock data (database not connected)');
       sourceResult = { rows: mockSources.filter(s => s.name.toLowerCase() === sourceName.toLowerCase()) };
-      
-      if (sourceResult.rows.length === 0) {
-        return res.status(404).json({
-          success: false,
-          error: "Source not found",
-          message: `No source found with name ${sourceName}`
-        });
-      }
-      
-      // Generate mock metrics
-      const now = new Date();
-      metricsResult = {
-        rows: [{
-          id: 1,
-          source_name: sourceName,
-          flood_risk_score: Math.floor(Math.random() * 40) + 60,
-          water_extent: Math.random() * 30 + 30,
-          ndvi: Math.random() * 0.4 + 0.4,
-          soil_moisture: Math.random() * 20 + 60,
-          cloud_cover: Math.random() * 30 + 10,
-          updated_at: now.toISOString()
-        }]
-      };
-      
-      // Generate mock historical data
-      historicalResult = {
-        rows: Array.from({ length: 10 }, (_, i) => {
-          const date = new Date(now.getTime() - (9 - i) * 24 * 60 * 60 * 1000);
-          return {
-            updated_at: date.toISOString(),
-            ndvi: Math.random() * 0.4 + 0.4,
-            water_extent: Math.random() * 30 + 30
-          };
-        })
-      };
+      metricsResult = { rows: [] };
+    }
+    
+    if (sourceResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Source not found",
+        message: `No source found with name ${sourceName}`
+      });
     }
     
     const dashboardData = {
       source: sourceResult.rows[0],
-      latestMetrics: metricsResult.rows[0] || null,
-      historicalTrends: historicalResult.rows,
-      lastUpdated: metricsResult.rows[0]?.updated_at || null
+      metrics: metricsResult.rows,
+      lastUpdated: metricsResult.rows[0]?.recorded_at || null
     };
     
     console.log(`Successfully generated dashboard data for ${sourceName}`);
@@ -295,6 +280,8 @@ app.get("/api/health", async (req, res) => {
     },
     endpoints: [
       "GET /api/sources",
+      "GET /api/flood-alerts",
+      "GET /api/monitoring-zones",
       "GET /api/dashboard/:source",
       "GET /api/health"
     ]

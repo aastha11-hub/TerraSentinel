@@ -3,6 +3,7 @@ import './globals.css'
 import ThemeProvider from '@/components/ThemeProvider';
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import { AuthProvider } from '@/contexts/AuthContext'
 
 
 export const metadata: Metadata = {
@@ -27,11 +28,13 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>
-          <Navbar />
-          <div className="min-h-screen">
-            {children}
-          </div>
-          <Footer />
+          <AuthProvider>
+            <Navbar />
+            <div className="min-h-screen">
+              {children}
+            </div>
+            <Footer />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

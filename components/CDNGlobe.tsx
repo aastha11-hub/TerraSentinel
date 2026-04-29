@@ -26,6 +26,10 @@ export default function CDNGlobe({ containerId = 'globe-container', className }:
     let scene: any
     let camera: any
     let globe: any
+    let atmosphere1: any
+    let atmosphere2: any
+    let points: any
+    let pointsMaterial: any
 
     const cleanup = () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -82,14 +86,15 @@ export default function CDNGlobe({ containerId = 'globe-container', className }:
         map: textureLoader.load(earthTextureUrl, () => {
           renderer?.render?.(scene, camera)
         }),
-        roughness: 1,
-        metalness: 0,
+        roughness: 0.8,
+        metalness: 0.1,
       })
 
       globe = new THREE.Mesh(geometry, material)
       scene.add(globe)
 
-      const atmosphere = new THREE.Mesh(
+      // Enhanced atmosphere with multiple layers
+      const atmosphere1 = new THREE.Mesh(
         new THREE.SphereGeometry(1.13, 64, 64),
         new THREE.MeshStandardMaterial({
           color: 0x00f5ff,
@@ -97,10 +102,51 @@ export default function CDNGlobe({ containerId = 'globe-container', className }:
           opacity: 0.08,
         }),
       )
-      scene.add(atmosphere)
+      scene.add(atmosphere1)
+
+      const atmosphere2 = new THREE.Mesh(
+        new THREE.SphereGeometry(1.16, 64, 64),
+        new THREE.MeshStandardMaterial({
+          color: 0x0080ff,
+          transparent: true,
+          opacity: 0.04,
+        }),
+      )
+      scene.add(atmosphere2)
+
+      // Add glowing points for major cities/locations
+      const pointsGeometry = new THREE.BufferGeometry()
+      const pointsMaterial = new THREE.PointsMaterial({
+        color: 0x00ffff,
+        size: 0.02,
+        transparent: true,
+        opacity: 0.8,
+      })
+
+      // Add some sample points (in real app, these would be actual flood monitoring locations)
+      const positions = new Float32Array([
+        0.8, 0.3, 0.5,   // India
+        -0.7, 0.4, 0.5,  // Europe
+        0.2, -0.6, 0.5,  // South America
+        -0.3, 0.7, 0.5,  // North America
+        0.9, -0.2, 0.5,  // Southeast Asia
+      ])
+
+      pointsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      const points = new THREE.Points(pointsGeometry, pointsMaterial)
+      scene.add(points)
 
       const animate = () => {
         if (globe) globe.rotation.y += 0.002
+        if (atmosphere1) atmosphere1.rotation.y += 0.001
+        if (atmosphere2) atmosphere2.rotation.y += 0.0005
+        if (points) {
+          points.rotation.y += 0.003
+          // Make points pulse
+          if (pointsMaterial) {
+            pointsMaterial.opacity = 0.8 + Math.sin(Date.now() * 0.002) * 0.3
+          }
+        }
         renderer.render(scene, camera)
         rafRef.current = requestAnimationFrame(animate)
       }
