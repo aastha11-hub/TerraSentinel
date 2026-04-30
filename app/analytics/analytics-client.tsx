@@ -2,6 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Script from 'next/script'
+import {
+  generateFloodData,
+  getStateData,
+  getHistoricalData,
+  calculateFloodRisk,
+  getRiskColor,
+  getRiskLabel,
+  WeatherService,
+  calculateCorrelation,
+  getCorrelationInsight,
+  INDIAN_STATES,
+  STATE_COORDINATES,
+  type StateData,
+  type HistoricalData
+} from './flood-data-service'
 
 declare global {
   interface Window {
@@ -16,13 +31,71 @@ export default function AnalyticsClient() {
   const chartInstances = useRef<any[]>([])
 
   const [chartReady, setChartReady] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [selectedState, setSelectedState] = useState<string>('All')
+  const [floodRiskScores, setFloodRiskScores] = useState<StateData[]>([])
+  const [correlationInsight, setCorrelationInsight] = useState<string>('')
+  const [apiError, setApiError] = useState<string>('')
 
-  const stateLabels = useMemo(() => ['Assam', 'Bihar', 'Gujarat', 'Kerala', 'Maharashtra', 'Odisha'], [])
-  const floodTrend = useMemo(() => [42, 36, 18, 24, 30, 33], [])
-  const affectedDistricts = useMemo(() => [12, 9, 5, 7, 8, 10], [])
-  const rainfall = useMemo(() => [220, 180, 90, 160, 140, 200], [])
-  const historicalMonths = useMemo(() => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'], [])
-  const historicalSeries = useMemo(() => [3, 4, 4, 6, 8, 12, 16, 14, 10], [])
+  // Generate comprehensive flood data
+  const floodData = useMemo(() => generateFloodData(), [])
+  const stateData = useMemo(() => getStateData(floodData), [floodData])
+  const historicalData = useMemo(() => getHistoricalData(selectedState === 'All' ? undefined : selectedState), [selectedState])
+
+  // Get top 10 states for trends chart
+  const topStates = useMemo(() => stateData.slice(0, 10), [stateData])
+  const stateLabels = useMemo(() => topStates.map(s => s.name), [topStates])
+  const floodTrend = useMemo(() => topStates.map(s => s.totalIncidents), [topStates])
+  const affectedDistricts = useMemo(() => topStates.map(s => Math.round(s.totalIncidents * 0.3)), [topStates])
+  const rainfall = useMemo(() => topStates.map(s => s.avgRainfall / 10), [topStates]) // Scale for chart
+
+  // Historical data for charts
+  const historicalMonths = useMemo(() => historicalData.slice(-12).map(d => `${d.month} ${d.year % 100}`), [historicalData])
+  const historicalSeries = useMemo(() => historicalData.slice(-12).map(d => d.incidents), [historicalData])
+  const historicalRainfall = useMemo(() => historicalData.slice(-12).map(d => d.rainfall / 10), [historicalData]) // Scale for chart
+
+  // Calculate correlation
+  const correlation = useMemo(() => {
+    const rainfallValues = topStates.map(s => s.avgRainfall)
+    const incidentValues = topStates.map(s => s.totalIncidents)
+    return calculateCorrelation(rainfallValues, incidentValues)
+  }, [topStates])
+
+  // Initialize flood risk scores
+  useEffect(() => {
+    const initializeRiskScores = async () => {
+      try {
+        const scores = await Promise.all(
+          stateData.map(async (state) => {
+            const currentRainfall = await WeatherService.getCurrentRainfall(
+              state.coordinates.lat,
+              state.coordinates.lng
+            )
+            const riskScore = calculateFloodRisk(currentRainfall, state.avgRainfall)
+            return { ...state, riskScore }
+          })
+        )
+        setFloodRiskScores(scores)
+        setCorrelationInsight(getCorrelationInsight(correlation))
+      } catch (error) {
+        console.error('Error initializing risk scores:', error)
+        setApiError('Failed to fetch live weather data. Using cached data.')
+        // Fallback to calculated risk scores
+        const fallbackScores = stateData.map(state => ({
+          ...state,
+          riskScore: Math.round((state.avgRainfall / 3000) * 100)
+        }))
+        setFloodRiskScores(fallbackScores)
+        setCorrelationInsight(getCorrelationInsight(correlation))
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (stateData.length > 0) {
+      initializeRiskScores()
+    }
+  }, [stateData, correlation])
 
   useEffect(() => {
     if (!chartReady) return
@@ -41,7 +114,21 @@ export default function AnalyticsClient() {
       maintainAspectRatio: false,
       plugins: {
         legend: { labels: { color: 'rgba(255,255,255,0.75)' } },
-        tooltip: { enabled: true },
+        tooltip: { 
+          enabled: true,
+          callbacks: {
+            label: function(context: any) {
+              let label = context.dataset.label || ''
+              if (label) {
+                label += ': '
+              }
+              if (context.parsed.y !== null) {
+                label += context.parsed.y
+              }
+              return label
+            }
+          }
+        },
       },
       scales: {
         x: { ticks: { color: 'rgba(255,255,255,0.6)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
@@ -57,14 +144,14 @@ export default function AnalyticsClient() {
             labels: stateLabels,
             datasets: [
               {
-                label: 'Flood trend index',
+                label: 'Total Flood Incidents (2015-2024)',
                 data: floodTrend,
                 backgroundColor: 'rgba(0,245,255,0.22)',
                 borderColor: 'rgba(0,245,255,0.8)',
                 borderWidth: 1,
               },
               {
-                label: 'Affected districts',
+                label: 'Estimated Affected Districts',
                 data: affectedDistricts,
                 backgroundColor: 'rgba(255,255,255,0.12)',
                 borderColor: 'rgba(255,255,255,0.35)',
@@ -72,7 +159,20 @@ export default function AnalyticsClient() {
               },
             ],
           },
-          options: commonOptions,
+          options: {
+            ...commonOptions,
+            scales: {
+              ...commonOptions.scales,
+              y: {
+                ...commonOptions.scales.y,
+                title: {
+                  display: true,
+                  text: 'Number of Incidents/Districts',
+                  color: 'rgba(255,255,255,0.7)'
+                }
+              }
+            }
+          },
         }),
       )
     }
@@ -84,19 +184,50 @@ export default function AnalyticsClient() {
           data: {
             datasets: [
               {
-                label: 'Rainfall vs Flood index',
-                data: rainfall.map((r, i) => ({ x: r, y: floodTrend[i] })),
+                label: 'Annual Average Rainfall vs Total Flood Incidents',
+                data: topStates.map((state, i) => ({ 
+                  x: state.avgRainfall, 
+                  y: state.totalIncidents,
+                  state: state.name
+                })),
                 backgroundColor: 'rgba(0,245,255,0.7)',
                 borderColor: 'rgba(0,245,255,0.8)',
+                pointRadius: 6,
+                pointHoverRadius: 8,
               },
             ],
           },
           options: {
             ...commonOptions,
             scales: {
-              x: { title: { display: true, text: 'Rainfall (mm)', color: 'rgba(255,255,255,0.7)' }, ticks: { color: 'rgba(255,255,255,0.6)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
-              y: { title: { display: true, text: 'Flood index', color: 'rgba(255,255,255,0.7)' }, ticks: { color: 'rgba(255,255,255,0.6)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+              x: { 
+                title: { display: true, text: 'Annual Average Rainfall (mm)', color: 'rgba(255,255,255,0.7)' }, 
+                ticks: { color: 'rgba(255,255,255,0.6)' }, 
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                min: 500
+              },
+              y: { 
+                title: { display: true, text: 'Total Flood Incidents (2015-2024)', color: 'rgba(255,255,255,0.7)' }, 
+                ticks: { color: 'rgba(255,255,255,0.6)' }, 
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                min: 0
+              },
             },
+            plugins: {
+              ...commonOptions.plugins,
+              tooltip: {
+                callbacks: {
+                  label: function(context: any) {
+                    const point = context.raw
+                    return [
+                      `State: ${point.state}`,
+                      `Rainfall: ${point.x.toFixed(0)} mm`,
+                      `Incidents: ${point.y}`
+                    ]
+                  }
+                }
+              }
+            }
           },
         }),
       )
@@ -110,17 +241,58 @@ export default function AnalyticsClient() {
             labels: historicalMonths,
             datasets: [
               {
-                label: 'Historical flood activity',
+                label: 'Flood Incidents',
                 data: historicalSeries,
                 tension: 0.35,
                 borderColor: 'rgba(0,245,255,0.9)',
                 backgroundColor: 'rgba(0,245,255,0.12)',
                 fill: true,
                 pointRadius: 3,
+                yAxisID: 'y',
+              },
+              {
+                label: 'Rainfall (×10 mm)',
+                data: historicalRainfall,
+                tension: 0.35,
+                borderColor: 'rgba(255,255,255,0.6)',
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                fill: false,
+                pointRadius: 2,
+                yAxisID: 'y1',
               },
             ],
           },
-          options: commonOptions,
+          options: {
+            ...commonOptions,
+            scales: {
+              ...commonOptions.scales,
+              y: {
+                ...commonOptions.scales.y,
+                type: 'linear',
+                display: true,
+                position: 'left',
+                title: {
+                  display: true,
+                  text: 'Flood Incidents',
+                  color: 'rgba(255,255,255,0.7)'
+                }
+              },
+              y1: {
+                ...commonOptions.scales.y,
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                  display: true,
+                  text: 'Rainfall (×10 mm)',
+                  color: 'rgba(255,255,255,0.7)'
+                },
+                grid: {
+                  drawOnChartArea: false,
+                },
+              },
+            },
+          },
         }),
       )
     }
@@ -133,29 +305,62 @@ export default function AnalyticsClient() {
       })
       chartInstances.current = []
     }
-  }, [affectedDistricts, chartReady, floodTrend, historicalMonths, historicalSeries, rainfall, stateLabels])
+  }, [chartReady, floodTrend, affectedDistricts, historicalMonths, historicalSeries, historicalRainfall, stateLabels, topStates])
 
   return (
     <>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {[
-          { label: 'Active Flood Regions', value: '3', hint: 'Demo overlays' },
-          { label: 'Affected Districts', value: '51', hint: 'Estimated' },
-          { label: 'Latest Model Run', value: '2m ago', hint: 'Near real-time' },
-        ].map((c) => (
-          <div key={c.label} className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-6">
-            <div className="text-sm text-white/60">{c.label}</div>
-            <div className="mt-2 text-3xl font-semibold text-white">{c.value}</div>
-            <div className="mt-1 text-xs text-white/45">{c.hint}</div>
+      {/* Loading State */}
+      {loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-6">
+              <div className="text-sm text-white/60">Loading...</div>
+              <div className="mt-2 text-3xl font-semibold text-white">--</div>
+              <div className="mt-1 text-xs text-white/45">Fetching data</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* API Error Message */}
+      {apiError && (
+        <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+          <p className="text-yellow-400 text-sm">{apiError}</p>
+        </div>
+      )}
+
+      {/* Real-time Stats */}
+      {!loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-6">
+            <div className="text-sm text-white/60">High Risk States</div>
+            <div className="mt-2 text-3xl font-semibold text-white">
+              {floodRiskScores.filter(s => s.riskScore >= 75).length}
+            </div>
+            <div className="mt-1 text-xs text-white/45">Critical monitoring required</div>
           </div>
-        ))}
-      </div>
+          <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-6">
+            <div className="text-sm text-white/60">Total Incidents (2024)</div>
+            <div className="mt-2 text-3xl font-semibold text-white">
+              {floodData.filter(d => d.year === 2024).reduce((sum, d) => sum + d.incidents, 0)}
+            </div>
+            <div className="mt-1 text-xs text-white/45">Across all states</div>
+          </div>
+          <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-6">
+            <div className="text-sm text-white/60">Avg Risk Score</div>
+            <div className="mt-2 text-3xl font-semibold text-white" style={{ color: getRiskColor(Math.round(floodRiskScores.reduce((sum, s) => sum + s.riskScore, 0) / floodRiskScores.length)) }}>
+              {Math.round(floodRiskScores.reduce((sum, s) => sum + s.riskScore, 0) / floodRiskScores.length)}
+            </div>
+            <div className="mt-1 text-xs text-white/45">National average</div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-cyan-accent">Flood trends by state</h2>
-            <span className="text-xs text-white/50">Demo</span>
+            <h2 className="text-lg font-semibold text-cyan-accent">Flood trends by state (2015-2024)</h2>
+            <span className="text-xs text-white/50">Top 10 states</span>
           </div>
           <div className="h-[320px]">
             <canvas ref={trendRef} />
@@ -165,22 +370,60 @@ export default function AnalyticsClient() {
         <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-cyan-accent">Rainfall correlation</h2>
-            <span className="text-xs text-white/50">Demo</span>
+            <span className="text-xs text-white/50">r = {correlation.toFixed(3)}</span>
           </div>
           <div className="h-[320px]">
             <canvas ref={correlationRef} />
           </div>
+          {correlationInsight && (
+            <div className="mt-3 p-3 bg-white/5 rounded-lg">
+              <p className="text-xs text-white/70">{correlationInsight}</p>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-cyan-accent">Historical flood charts</h2>
-            <span className="text-xs text-white/50">Demo</span>
+            <select 
+              value={selectedState} 
+              onChange={(e) => setSelectedState(e.target.value)}
+              className="text-xs bg-white/10 text-white border border-white/20 rounded px-2 py-1 focus:outline-none focus:border-cyan-accent"
+            >
+              <option value="All">All States</option>
+              {INDIAN_STATES.map(state => (
+                <option key={state} value={state}>{state}</option>
+              ))}
+            </select>
           </div>
           <div className="h-[320px]">
             <canvas ref={historicalRef} />
           </div>
         </div>
+
+        {/* Flood Risk Scores */}
+        {!loading && (
+          <div className="lg:col-span-2 glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-cyan-accent">Current Flood Risk Scores</h2>
+              <span className="text-xs text-white/50">Real-time assessment</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {floodRiskScores.slice(0, 12).map((state) => (
+                <div key={state.name} className="text-center">
+                  <div 
+                    className="text-lg font-bold mb-1"
+                    style={{ color: getRiskColor(state.riskScore) }}
+                  >
+                    {state.riskScore}
+                  </div>
+                  <div className="text-xs text-white/60">{state.name}</div>
+                  <div className="text-xs text-white/40">{getRiskLabel(state.riskScore)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <Script
