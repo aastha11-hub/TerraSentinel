@@ -5,6 +5,8 @@ import { signInWithPopup } from 'firebase/auth'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { db } from '../../lib/firebase'
+import { collection, addDoc } from 'firebase/firestore'
 
 
 interface FormData {
@@ -80,7 +82,7 @@ export default function LoginPage() {
         name: formData.name || formData.email.split('@')[0],
         loginTime: new Date().toISOString()
       }
-      
+      await addDoc(collection(db, "users"), userData)
       login(userData)
       
       // Redirect to dashboard
@@ -109,6 +111,26 @@ export default function LoginPage() {
         name: displayName || (email.includes('@') ? email.split('@')[0] : ''),
         avatar: photoURL,
         loginTime: new Date().toISOString(),
+      }
+
+      if (email) {
+        try {
+          const res = await fetch('/api/save-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              name: displayName.trim() ? displayName : null,
+              avatar: photoURL.trim() ? photoURL : null,
+            }),
+          })
+          const saved: unknown = await res.json().catch(() => undefined)
+          if (!res.ok) {
+            console.error('[Login] save-user failed:', res.status, saved)
+          }
+        } catch (persistError: unknown) {
+          console.error('[Login] save-user network error:', persistError)
+        }
       }
 
       login(userData)
