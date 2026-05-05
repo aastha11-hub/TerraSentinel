@@ -1,8 +1,12 @@
 'use client'
-
+import { auth, provider } from '@/lib/firebase'
+import { FirebaseError } from 'firebase/app'
+import { signInWithPopup } from 'firebase/auth'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { db } from '../../lib/firebase'
+import { collection, addDoc } from 'firebase/firestore'
 
 
 interface FormData {
@@ -78,7 +82,7 @@ export default function LoginPage() {
         name: formData.name || formData.email.split('@')[0],
         loginTime: new Date().toISOString()
       }
-      
+      await addDoc(collection(db, "users"), userData)
       login(userData)
       
       // Redirect to dashboard
@@ -92,24 +96,58 @@ export default function LoginPage() {
   }
 
   const handleGoogleSignIn = async () => {
+    console.log('[Login] Firebase signInWithPopup invoked (Google account picker)')
     setIsLoading(true)
-    
     try {
-      // Simulate Google OAuth
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      
+      const result = await signInWithPopup(auth, provider)
+      const user = result.user
+
+      const email = user.email ?? ''
+      const displayName = user.displayName ?? ''
+      const photoURL = user.photoURL ?? ''
+
       const userData = {
-        email: 'user@gmail.com',
-        name: 'Google User',
-        avatar: 'https://ui-avatars.com/api/?name=Google+User&background=0D8ABC&color=fff',
-        loginTime: new Date().toISOString()
+        email,
+        name: displayName || (email.includes('@') ? email.split('@')[0] : ''),
+        avatar: photoURL,
+        loginTime: new Date().toISOString(),
       }
-      
+
+      if (email) {
+        try {
+          const res = await fetch('/api/save-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              name: displayName.trim() ? displayName : null,
+              avatar: photoURL.trim() ? photoURL : null,
+            }),
+          })
+          const saved: unknown = await res.json().catch(() => undefined)
+          if (!res.ok) {
+            console.error('[Login] save-user failed:', res.status, saved)
+          }
+        } catch (persistError: unknown) {
+          console.error('[Login] save-user network error:', persistError)
+        }
+      }
+
       login(userData)
       router.push('/')
-      
-    } catch (error) {
-      setErrors({ general: 'Google sign-in failed. Please try again.' })
+    } catch (error: unknown) {
+      let message = 'Google sign-in failed. Please try again.'
+      if (error instanceof FirebaseError) {
+        if (error.code === 'auth/popup-closed-by-user') {
+          message = 'Sign-in was cancelled.'
+        } else {
+          message = error.message
+        }
+      } else if (error instanceof Error) {
+        message = error.message
+      }
+      console.error('[Login] Google sign-in error:', error)
+      setErrors({ general: message })
     } finally {
       setIsLoading(false)
     }
