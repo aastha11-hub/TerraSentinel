@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { useSearchParams, useRouter } from 'next/navigation'
-import RealSatelliteCard from '../../components/satellite/RealSatelliteCard'
+import MinimalSatelliteCard from '../../components/satellite/MinimalSatelliteCard'
+import LiveSatelliteGallery from '../../components/satellite/LiveSatelliteGallery'
 import {
   generateSatelliteFrames,
   linkFrameWithAnalytics,
@@ -25,6 +26,85 @@ import {
   type FloodData
 } from '../analytics/flood-data-service'
 
+// Helper function to generate hybrid image sources for satellites
+const getHybridImageSources = (sensor: string) => {
+  // Mock API endpoints (replace with real satellite APIs)
+  const apiEndpoints = {
+    'Sentinel-1': {
+      raw: 'https://api.sentinel-hub.com/v1/process/sentinel-1-raw',
+      ndwi: 'https://api.sentinel-hub.com/v1/process/sentinel-1-ndwi',
+      mask: 'https://api.sentinel-hub.com/v1/process/sentinel-1-mask'
+    },
+    'Sentinel-2': {
+      raw: 'https://api.sentinel-hub.com/v1/process/sentinel-2-raw',
+      ndwi: 'https://api.sentinel-hub.com/v1/process/sentinel-2-ndwi',
+      mask: 'https://api.sentinel-hub.com/v1/process/sentinel-2-mask'
+    },
+    'RISAT': {
+      raw: 'https://api.isro.gov.in/v1/process/risat-raw',
+      ndwi: 'https://api.isro.gov.in/v1/process/risat-ndwi',
+      mask: 'https://api.isro.gov.in/v1/process/risat-mask'
+    },
+    'Resourcesat': {
+      raw: 'https://api.isro.gov.in/v1/process/resourcesat-raw',
+      ndwi: 'https://api.isro.gov.in/v1/process/resourcesat-ndwi',
+      mask: 'https://api.isro.gov.in/v1/process/resourcesat-mask'
+    },
+    'Cartosat': {
+      raw: 'https://api.isro.gov.in/v1/process/cartosat-raw',
+      ndwi: 'https://api.isro.gov.in/v1/process/cartosat-ndwi',
+      mask: 'https://api.isro.gov.in/v1/process/cartosat-mask'
+    }
+  }
+
+  // Local fallback paths
+  const localPaths = {
+    'Sentinel-1': {
+      raw: '/images/satellite/sentinel1-raw.jpg',
+      ndwi: '/images/satellite/sentinel1-ndwi.jpg',
+      mask: '/images/satellite/sentinel1-mask.jpg'
+    },
+    'Sentinel-2': {
+      raw: '/images/satellite/sentinel2-raw.jpg',
+      ndwi: '/images/satellite/sentinel2-ndwi.jpg',
+      mask: '/images/satellite/sentinel2-mask.jpg'
+    },
+    'RISAT': {
+      raw: '/images/satellite/risat-raw.jpg',
+      ndwi: '/images/satellite/risat-ndwi.jpg',
+      mask: '/images/satellite/risat-mask.jpg'
+    },
+    'Resourcesat': {
+      raw: '/images/satellite/resourcesat-raw.jpg',
+      ndwi: '/images/satellite/resourcesat-ndwi.jpg',
+      mask: '/images/satellite/resourcesat-mask.jpg'
+    },
+    'Cartosat': {
+      raw: '/images/satellite/cartosat-raw.jpg',
+      ndwi: '/images/satellite/cartosat-ndwi.jpg',
+      mask: '/images/satellite/cartosat-mask.jpg'
+    }
+  }
+
+  const apiSources = apiEndpoints[sensor as keyof typeof apiEndpoints] || apiEndpoints['Sentinel-2']
+  const localSources = localPaths[sensor as keyof typeof localPaths] || localPaths['Sentinel-2']
+
+  return {
+    raw: {
+      api: apiSources.raw,
+      local: localSources.raw
+    },
+    ndwi: {
+      api: apiSources.ndwi,
+      local: localSources.ndwi
+    },
+    mask: {
+      api: apiSources.mask,
+      local: localSources.mask
+    }
+  }
+}
+
 // Enhanced frame type for live processing
 type ProcessingStage = 'receiving' | 'processing' | 'detecting' | 'completed'
 
@@ -40,6 +120,21 @@ interface EnhancedSatelliteFrame extends SatelliteFrame {
     source: string
     orbit: string
     latency: string
+  }
+  // Hybrid image sources (API + local fallback)
+  imageSources: {
+    raw: {
+      api?: string
+      local: string
+    }
+    ndwi: {
+      api?: string
+      local: string
+    }
+    mask: {
+      api?: string
+      local: string
+    }
   }
 }
 
@@ -152,7 +247,8 @@ export default function SatelliteClient() {
                    'Cartosat-3 PAN',
             orbit: index % 2 === 0 ? 'Ascending' : 'Descending',
             latency: `-${(1.5 + Math.random() * 2).toFixed(1)} sec`
-          }
+          },
+          imageSources: getHybridImageSources(frame.sensor)
         }
       })
       
@@ -327,7 +423,8 @@ Contact: terra.sentinel@isro.gov.in | Emergency: 1078 (NDMA Helpline)
             floodPixels: Math.floor(Math.random() * 50000) + 10000,
             confidence: 85 + Math.random() * 14,
             area: Math.floor(Math.random() * 100) + 50
-          }
+          },
+          imageSources: frame.imageSources // Ensure imageSources is preserved
         }
       }
       return frame
@@ -378,10 +475,10 @@ Contact: terra.sentinel@isro.gov.in | Emergency: 1078 (NDMA Helpline)
         </div>
       </div>
 
-      {/* Live Satellite Frame Grid */}
+      {/* Minimal Satellite Frame Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
         {frames.map((frame) => (
-          <RealSatelliteCard
+          <MinimalSatelliteCard
             key={frame.id}
             frame={frame}
             isSelected={selectedFrame?.id === frame.id}
@@ -445,6 +542,16 @@ Contact: terra.sentinel@isro.gov.in | Emergency: 1078 (NDMA Helpline)
           </div>
         </div>
       )}
+
+      {/* MAIN VISUAL IMPACT - SATELLITE GALLERY */}
+      <div className="mt-12 space-y-8">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-white mb-2">MAIN VISUAL IMPACT</h2>
+          <p className="text-white/60">Live Satellite Gallery - Real-time Flood Detection</p>
+        </div>
+        
+        <LiveSatelliteGallery />
+      </div>
     </>
   )
 }
