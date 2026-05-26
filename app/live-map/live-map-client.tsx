@@ -1,112 +1,239 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import Script from 'next/script'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { Map as LeafletMap, Rectangle, TileLayer } from 'leaflet'
+import FloodOverlayPanel from '@/components/live-map/FloodOverlayPanel'
+import { FLOOD_REGIONS, type FloodRegion } from '@/app/live-map/flood-regions'
 
-declare global {
-  interface Window {
-    L?: any
-  }
+type MapStatus = 'loading' | 'ready' | 'error'
+
+const DEFAULT_OVERLAY_STYLE = {
+  color: '#00F5FF',
+  weight: 2,
+  fillColor: '#00F5FF',
+  fillOpacity: 0.12,
+} as const
+
+const ACTIVE_OVERLAY_STYLE = {
+  color: '#00F5FF',
+  weight: 3,
+  fillColor: '#00F5FF',
+  fillOpacity: 0.2,
+} as const
+
+function getLeafletModule(leaflet: typeof import('leaflet')) {
+  return (leaflet as { default?: typeof import('leaflet') }).default ?? leaflet
 }
 
-type FloodRegion = {
-  name: string
-  bounds: [[number, number], [number, number]]
+function isValidBounds(bounds: FloodRegion['bounds']) {
+  const [[south, west], [north, east]] = bounds
+  const nums = [south, west, north, east]
+  return nums.every((n) => Number.isFinite(n)) && south < north && west < east
 }
-
-const FLOOD_REGIONS: FloodRegion[] = [
-  { name: 'Assam (Brahmaputra Basin)', bounds: [[26.0, 90.0], [27.8, 95.2]] },
-  { name: 'Bihar (Ganga Plains)', bounds: [[25.0, 83.0], [26.8, 87.7]] },
-  { name: 'Gujarat (Sabarmati Basin)', bounds: [[22.5, 71.0], [24.1, 73.2]] },
-]
 
 export default function LiveMapClient() {
   const mapDivRef = useRef<HTMLDivElement | null>(null)
-  const mapRef = useRef<any>(null)
-  const layersRef = useRef<{ flood?: any; satellite?: any }>({})
+  const mapRef = useRef<LeafletMap | null>(null)
+  const layersRef = useRef<{
+    floodRectById?: Record<string, Rectangle>
+    satellite?: TileLayer
+  }>({})
 
   const [isSatelliteOn, setIsSatelliteOn] = useState(false)
   const [query, setQuery] = useState('')
+  const [activeRegionId, setActiveRegionId] = useState<string | null>(null)
   const [timestamp] = useState(() => new Date().toLocaleString())
+  const [mapStatus, setMapStatus] = useState<MapStatus>('loading')
+  const [mapError, setMapError] = useState<string | null>(null)
+  const [initAttempt, setInitAttempt] = useState(0)
 
-  const match = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return null
-    return FLOOD_REGIONS.find((r) => r.name.toLowerCase().includes(q)) ?? null
-  }, [query])
+  const renderFloodOverlays = useCallback((regionId: string | null) => {
+    const map = mapRef.current
+    const floodRectById = layersRef.current.floodRectById
+    if (!map || !floodRectById) return
+
+    const showAll = !regionId
+
+    Object.entries(floodRectById).forEach(([id, rect]) => {
+      const isActive = regionId === id
+
+      if (isActive) {
+        rect.setStyle(ACTIVE_OVERLAY_STYLE)
+        if (!map.hasLayer(rect)) rect.addTo(map)
+        return
+      }
+
+      rect.setStyle(DEFAULT_OVERLAY_STYLE)
+
+      if (showAll) {
+        if (!map.hasLayer(rect)) rect.addTo(map)
+      } else if (map.hasLayer(rect)) {
+        map.removeLayer(rect)
+      }
+    })
+  }, [])
+
+  const zoomToRegion = useCallback((region: FloodRegion) => {
+    const map = mapRef.current
+    if (!map || !isValidBounds(region.bounds)) return
+
+    const [[south, west], [north, east]] = region.bounds
+    try {
+      map.fitBounds(
+        [
+          [south, west],
+          [north, east],
+        ],
+        { padding: [40, 40], animate: true, duration: 0.5 },
+      )
+    } catch (err) {
+      console.error('[TerraSentinel LiveMap] fitBounds failed', err)
+    }
+  }, [])
+
+  const handleRegionSelect = useCallback(
+    (region: FloodRegion) => {
+      setQuery(region.state)
+      setActiveRegionId(region.id)
+      renderFloodOverlays(region.id)
+      zoomToRegion(region)
+    },
+    [renderFloodOverlays, zoomToRegion],
+  )
+
+  const handleQueryChange = useCallback(
+    (value: string) => {
+      setQuery(value)
+      if (activeRegionId) setActiveRegionId(null)
+    },
+    [activeRegionId],
+  )
+
+  const handleRetry = useCallback(() => {
+    setMapError(null)
+    setMapStatus('loading')
+    setInitAttempt((n) => n + 1)
+  }, [])
 
   useEffect(() => {
-    if (!window.L) return
-    if (!mapDivRef.current) return
-    if (mapRef.current) return
+    let disposed = false
+    let map: LeafletMap | null = null
+    const container = mapDivRef.current
 
-    const L = window.L
-    const map = L.map(mapDivRef.current, {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([22.5, 79.0], 5)
+    if (!container) {
+      setMapError('Map container not available')
+      setMapStatus('error')
+      return
+    }
 
-    const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    })
-    base.addTo(map)
+    async function initMap() {
+      try {
+        setMapStatus('loading')
+        setMapError(null)
 
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19,
-    })
+        const leafletModule = await import('leaflet')
+        const L = getLeafletModule(leafletModule)
 
-    const floodLayer = L.layerGroup()
-    FLOOD_REGIONS.forEach((region) => {
-      const rect = L.rectangle(region.bounds, {
-        color: '#00F5FF',
-        weight: 2,
-        fillColor: '#00F5FF',
-        fillOpacity: 0.12,
-      }).bindPopup(`<b>${region.name}</b><br/>Flood-affected region (demo overlay)`)
-      rect.addTo(floodLayer)
-    })
-    floodLayer.addTo(map)
+        if (disposed || !mapDivRef.current) return
 
-    mapRef.current = map
-    layersRef.current = { flood: floodLayer, satellite }
+        if (mapRef.current) {
+          mapRef.current.remove()
+          mapRef.current = null
+          layersRef.current = {}
+        }
+
+        map = L.map(mapDivRef.current, {
+          zoomControl: true,
+          attributionControl: true,
+          preferCanvas: true,
+        }).setView([22.5937, 78.9629], 5)
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        }).addTo(map)
+
+        const satellite = L.tileLayer(
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri',
+          },
+        )
+
+        const floodRectById: Record<string, Rectangle> = {}
+
+        FLOOD_REGIONS.forEach((region) => {
+          if (!isValidBounds(region.bounds)) return
+
+          floodRectById[region.id] = L.rectangle(region.bounds, DEFAULT_OVERLAY_STYLE).bindPopup(
+            `<b>${region.name}</b><br/>${region.basin}<br/>Flood monitoring overlay`,
+          )
+        })
+
+        mapRef.current = map
+        layersRef.current = { floodRectById, satellite }
+
+        requestAnimationFrame(() => {
+          if (!disposed && mapRef.current) {
+            mapRef.current.invalidateSize()
+          }
+        })
+
+        setTimeout(() => {
+          if (!disposed && mapRef.current) {
+            mapRef.current.invalidateSize()
+          }
+        }, 150)
+
+        if (!disposed) setMapStatus('ready')
+      } catch (err) {
+        if (disposed) return
+        const message =
+          err instanceof Error ? err.message : 'Failed to initialize flood map'
+        setMapError(message)
+        setMapStatus('error')
+        console.error('[TerraSentinel LiveMap]', err)
+      }
+    }
+
+    initMap()
 
     return () => {
-      try {
-        map.remove()
-      } catch {}
+      disposed = true
+      if (map) {
+        try {
+          map.remove()
+        } catch {
+          /* ignore */
+        }
+      }
       mapRef.current = null
       layersRef.current = {}
     }
-  }, [])
+  }, [initAttempt])
 
   useEffect(() => {
     const map = mapRef.current
     const satellite = layersRef.current.satellite
-    if (!map || !satellite) return
+    if (!map || !satellite || mapStatus !== 'ready') return
+
     if (isSatelliteOn) satellite.addTo(map)
     else map.removeLayer(satellite)
-  }, [isSatelliteOn])
+  }, [isSatelliteOn, mapStatus])
 
   useEffect(() => {
-    if (!match) return
-    const map = mapRef.current
-    if (!map) return
-    const [[south, west], [north, east]] = match.bounds
-    map.fitBounds(
-      [
-        [south, west],
-        [north, east],
-      ],
-      { padding: [40, 40] },
-    )
-  }, [match])
+    if (mapStatus !== 'ready') return
+    renderFloodOverlays(activeRegionId)
+  }, [activeRegionId, mapStatus, renderFloodOverlays])
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
-      <div className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between gap-4">
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="glow-border overflow-hidden rounded-2xl bg-space-navy/40 backdrop-blur-sm">
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 px-5 py-4">
           <div className="text-sm text-white/70">
-            Satellite timestamp: <span className="text-white font-mono">{timestamp}</span>
+            Satellite timestamp: <span className="font-mono text-white">{timestamp}</span>
           </div>
           <label className="inline-flex items-center gap-2 text-sm text-white/80">
             <input
@@ -114,60 +241,57 @@ export default function LiveMapClient() {
               checked={isSatelliteOn}
               onChange={(e) => setIsSatelliteOn(e.target.checked)}
               className="accent-cyan-accent"
+              disabled={mapStatus !== 'ready'}
             />
             Satellite layer
           </label>
         </div>
 
-        <div ref={mapDivRef} className="h-[520px] w-full" />
-      </div>
+        <div className="relative h-[520px] w-full min-h-[520px]">
+          <div
+            ref={mapDivRef}
+            className="live-map-container absolute inset-0 z-0 h-full w-full min-h-[520px]"
+            aria-label="Live flood monitoring map"
+          />
 
-      <aside className="glow-border bg-space-navy/40 backdrop-blur-sm rounded-2xl p-5">
-        <h2 className="text-lg font-semibold text-cyan-accent mb-4">Search</h2>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search state / region (e.g., Assam, Bihar, Gujarat)"
-          className="w-full px-4 py-3 bg-black/30 border border-white/10 focus:border-cyan-accent/50 outline-none text-white placeholder:text-white/40"
-        />
-        <div className="mt-4 text-sm text-white/70">
-          {match ? (
-            <>
-              Match: <span className="text-white">{match.name}</span>
-            </>
-          ) : query.trim() ? (
-            <>No match found. Try “Assam”, “Bihar”, or “Gujarat”.</>
-          ) : (
-            <>Type to zoom to a highlighted region.</>
+          {mapStatus === 'loading' && (
+            <div
+              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-space-navy/80 text-sm text-white/60"
+              role="status"
+              aria-live="polite"
+            >
+              Initializing geospatial map…
+            </div>
+          )}
+
+          {mapStatus === 'error' && (
+            <div
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-space-navy/90 px-6 text-center"
+              role="alert"
+            >
+              <p className="text-sm text-white/70">Map failed to load</p>
+              {mapError && (
+                <p className="max-w-md font-mono text-xs text-white/40">{mapError}</p>
+              )}
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="border border-cyan-accent/40 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-cyan-accent transition-colors duration-200 hover:border-cyan-accent/70 hover:bg-cyan-accent/10"
+              >
+                Retry
+              </button>
+            </div>
           )}
         </div>
+      </div>
 
-        <div className="mt-8">
-          <h3 className="text-sm font-semibold text-white/90 mb-3">Flood overlays</h3>
-          <ul className="space-y-2 text-sm text-white/70">
-            {FLOOD_REGIONS.map((r) => (
-              <li key={r.name} className="flex items-center justify-between gap-3">
-                <span>{r.name}</span>
-                <button
-                  className="text-cyan-accent hover:text-white transition-colors"
-                  onClick={() => setQuery(r.name.split(' ')[0])}
-                >
-                  Zoom
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </aside>
-
-      <Script
-        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        strategy="afterInteractive"
-        onLoad={() => {
-          // Leaflet is initialized by effect once window.L is available.
-        }}
+      <FloodOverlayPanel
+        regions={FLOOD_REGIONS}
+        query={query}
+        onQueryChange={handleQueryChange}
+        onRegionSelect={handleRegionSelect}
+        activeRegionId={activeRegionId}
       />
     </div>
   )
 }
-
