@@ -5,12 +5,13 @@
   "scripts": {
     "clean": "node scripts/clean-next.mjs",
     "dev": "npm run clean && next dev",
-    "build": "prisma generate && npm run clean && next build",
+    "build": "npm run clean && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy"
+    "db:setup": "node scripts/ensure-env.mjs",
+    "db:deploy": "node scripts/ensure-env.mjs && prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
