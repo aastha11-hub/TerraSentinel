@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import AnalyticsClient from './analytics-client'
 
 export const metadata = {
@@ -17,7 +18,9 @@ export default function AnalyticsPage() {
           </p>
         </header>
 
-        <AnalyticsClient />
+        <Suspense fallback={<div className="text-white/60">Loading analytics...</div>}>
+          <AnalyticsClient />
+        </Suspense>
       </div>
     </main>
   )

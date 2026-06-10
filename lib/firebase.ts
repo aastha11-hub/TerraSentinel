@@ -1,5 +1,10 @@
-import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";  
+import {
+  initializeApp,
+  getApps,
+  getApp,
+  type FirebaseApp,
+} from "firebase/app";
+import { getFirestore, type Firestore } from "firebase/firestore";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -9,19 +14,31 @@ import {
 export { GoogleAuthProvider };
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDQPpu4FjiYhDN1Hcj7ELrG0SFGW1DGQl0",
-  authDomain: "terrasentinel-1.firebaseapp.com",
-  projectId: "terrasentinel-1",
-  storageBucket: "terrasentinel-1.firebasestorage.app",
-  messagingSenderId: "96748002872",
-  appId: "1:96748002872:web:e5c984f7487884e5bed0cd",
-  measurementId: "G-0WMWRM9SV2",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? "",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ?? "",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? "",
+  messagingSenderId:
+    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID ?? "",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID ?? "",
 };
 
-const app = initializeApp(firebaseConfig);
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey && firebaseConfig.projectId,
+);
 
-export const auth: Auth = getAuth(app);
+let app: FirebaseApp | undefined;
+let auth: Auth | undefined;
+let db: Firestore | undefined;
 
-export const db = getFirestore(app);
+if (isFirebaseConfigured) {
+  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+}
+
+export { auth, db };
+
 export const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: "select_account" });

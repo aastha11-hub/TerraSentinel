@@ -174,7 +174,7 @@ export default function DashboardPage() {
                 <span className="text-gradient">Dashboard</span>
               </h1>
               <p className="mt-2 text-white/70">
-                Welcome back, {user.name}. Here's your monitoring overview.
+                Welcome back, {user.name}. Here&apos;s your monitoring overview.
                 {!loading && <span className="text-cyan-accent"> Live data active</span>}
               </p>
             </div>

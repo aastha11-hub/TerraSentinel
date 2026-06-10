@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import SatelliteClient from './satellite-client'
 
 export const metadata = {
@@ -17,7 +18,9 @@ export default function SatelliteDataPage() {
           </p>
         </header>
 
-        <SatelliteClient />
+        <Suspense fallback={<div className="text-white/60">Loading satellite data...</div>}>
+          <SatelliteClient />
+        </Suspense>
       </div>
     </main>
   )

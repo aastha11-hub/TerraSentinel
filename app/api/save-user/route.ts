@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { isDatabaseConfigured, prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -53,6 +53,11 @@ export async function POST(request: Request): Promise<NextResponse> {
       { error: "Missing or invalid email" },
       { status: 400 },
     );
+  }
+
+  if (!isDatabaseConfigured()) {
+    console.warn("[save-user] DATABASE_URL is not configured; skipping persistence");
+    return NextResponse.json({ ok: true, created: false, skipped: true });
   }
 
   try {

@@ -1,11 +1,10 @@
 'use client'
-import { auth, provider } from '@/lib/firebase'
+import { auth, provider, db, isFirebaseConfigured } from '@/lib/firebase'
 import { FirebaseError } from 'firebase/app'
 import { signInWithPopup } from 'firebase/auth'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { db } from '../../lib/firebase'
 import { collection, addDoc } from 'firebase/firestore'
 
 
@@ -73,6 +72,11 @@ export default function LoginPage() {
     setIsLoading(true)
     
     try {
+      if (!isFirebaseConfigured || !db) {
+        setErrors({ general: 'Authentication service is not configured.' })
+        return
+      }
+
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 2000))
       
@@ -99,6 +103,11 @@ export default function LoginPage() {
     console.log('[Login] Firebase signInWithPopup invoked (Google account picker)')
     setIsLoading(true)
     try {
+      if (!isFirebaseConfigured || !auth) {
+        setErrors({ general: 'Authentication service is not configured.' })
+        return
+      }
+
       const result = await signInWithPopup(auth, provider)
       const user = result.user
 
